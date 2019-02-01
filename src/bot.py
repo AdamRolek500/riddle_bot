@@ -5,10 +5,11 @@ By: Adam Rolek
 """
 import discord
 import os
-import time
 import sqlite3
 import threading
 import json
+import asyncio
+from time import sleep
 from sqlite3 import Error
 from random import randint
 
@@ -22,7 +23,7 @@ riddle = ''
 answer = ''
 is_answered = None
 
-database_path = "E:\Discord Bots\\riddleBot\databases\dailyriddles.db"
+database_path = "E:\Discord Bots\\riddle_bot\databases\dailyriddles.db"
 sql_create_riddles_table = """ CREATE TABLE IF NOT EXISTS riddles (
                                 id integer PRIMARY KEY,
                                 riddle text,
@@ -38,24 +39,31 @@ async def on_message(message):
     if message.content.startswith('~riddle'):
         if is_answered == None or is_answered:
             if(get_random_riddle(db_connection) == True):
-                is_answered = False
+                with lock:
+                    is_answered = False
                 await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
                 print('-----Sent Riddle-----')
                 print('#' + str(riddle_index) + ': ' + riddle)
                 print('\nAnswer: ' + answer)
+                wait_thread = threading.Thread(target = day_countdown(message.channel))
+                wait_thread.deamon = True
+                wait_thread.start()
                 #TODO: Setup the thread for waiting a day to update is_answered
                 #   - make 'time_is_up' var
             else:
                 await client.send_message(message.channel, 'Could not access database!')
         else:
             print('The riddle isnt answered')
+            await client.send_message(message.channel, 'Must answer the current riddle...\n')
+            await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
             #TODO: The riddle isnt answered so show how long until a refresh may happen...
     if message.content.startswith('~answer'):
         #TODO:
         #   - Cant answer when is_answered == None
         #   - make answer formula
         print(answer)
-        is_answered = True
+        with lock:
+            is_answered = True
 
 @client.event
 async def on_ready():
@@ -129,6 +137,26 @@ def get_random_riddle(connection):
     except:
         print('Error accessing the riddle database...')
         return False
+        
+def day_countdown(channel):
+    global is_answered
+    for sec in range(10):
+        print(sec)
+        sleep(1)
+    with lock:
+        is_answered = True
+    print('-----Time is up!-----')
+    print('The time to answer the riddle has passed!')
+    print('#' + str(riddle_index) + ': ' + riddle)
+    print('Answer: ' + answer)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(timeout_notify_user(channel))
+    return
+    
+async def timeout_notify_user(channel):
+    await client.send_message(channel, 'The time to answer the riddle has passed!')
+    await client.send_message(channel, '#' + str(riddle_index) + ': ' + riddle)
+    await client.send_message(channel, 'Answer: ' + answer)
 
 def main():
     os.system('cls')
