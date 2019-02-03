@@ -6,10 +6,9 @@ By: Adam Rolek
 import discord
 import os
 import sqlite3
-import threading
 import json
 import asyncio
-from time import sleep
+from datetime import datetime
 from sqlite3 import Error
 from random import randint
 
@@ -17,11 +16,10 @@ from random import randint
 client = discord.Client()
 #Harder to access when the connection isn't global
 db_connection = None
-lock = threading.Lock()
 riddle_index = 0
 riddle = ''
 answer = ''
-is_answered = None
+riddle_time = None
 
 database_path = "E:\Discord Bots\\riddle_bot\databases\dailyriddles.db"
 sql_create_riddles_table = """ CREATE TABLE IF NOT EXISTS riddles (
@@ -35,39 +33,74 @@ sql_get_riddle = 'SELECT * FROM riddles WHERE id = '
 
 @client.event
 async def on_message(message):
-    global is_answered
-    if message.content.startswith('~riddle'):
-        if is_answered == None or is_answered:
+    #lets just make sure a bot is not sending commands to us.
+    if (message.author.bot):
+        return
+    global riddle_time
+    #This may be the firtime that on_message is called, so, riddle_time is'None'
+    try:
+        time_difference = datetime.now() - riddle_time
+    except:
+        print('Could not get the time difference... Perhaps the \'riddle_time\' variable is not set?')
+    #user is asking for a new riddle
+    if message.content.startswith('~r'):
+        #Make sure that the riddle_time is either not set or above 1 day. Accurate down to a second. 
+        if riddle_time == None or time_difference.seconds >= 86400: #There are 86400 seconds in a day
+            #Making sure that we were able to get a riddle form the database
             if(get_random_riddle(db_connection) == True):
-                with lock:
-                    is_answered = False
-                await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
-                print('-----Sent Riddle-----')
-                print('#' + str(riddle_index) + ': ' + riddle)
+                #The current time is when we got this riddle so lets store that time.
+                riddle_time = datetime.now()
+                #Logging
+                print('-----SENT RIDDLE-----')
+                print('Time: ' + str(riddle_time))
+                print('\n#' + str(riddle_index) + ': ' + riddle)
                 print('\nAnswer: ' + answer)
-                wait_thread = threading.Thread(target = day_countdown(message.channel))
-                wait_thread.deamon = True
-                wait_thread.start()
-                #TODO: Setup the thread for waiting a day to update is_answered
-                #   - make 'time_is_up' var
+                #sending the riddle to the user
+                await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
             else:
+                #Letting the user know we could not access the database
                 await client.send_message(message.channel, 'Could not access database!')
         else:
-            print('The riddle isnt answered')
+            #if the current riddle was not answered correctly
+            print('-----CURRENT RIDDLE ISNT ANSWERED-----')
+            print('\n#' + str(riddle_index) + ': ' + riddle)
+            print('\nTime Remaining: ' + second_converter(time_difference.seconds))
             await client.send_message(message.channel, 'Must answer the current riddle...\n')
             await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
-            #TODO: The riddle isnt answered so show how long until a refresh may happen...
-    if message.content.startswith('~answer'):
+            await client.send_message(message.channel, 'Remaining Time: ' + second_converter(time_difference.seconds))
+    if message.content.startswith('~a'):
         #TODO:
         #   - Cant answer when is_answered == None
         #   - make answer formula
         print(answer)
-        with lock:
-            is_answered = True
+    if message.content.startswith('~help'):
+        await client.send_message(message.channel, 'Daily Riddle Bot Commands:')
+        await client.send_message(message.channel, '    ~r: Request a new riddle')
+        await client.send_message(message.channel, '    ~a [TEXT]: Attempt to answer the current riddle')
+        await client.send_message(message.channel, '    ~help: Daily Riddle Bot Command Help Page')
 
 @client.event
 async def on_ready():
     print('Logged in as {}'.format(client.user.name))
+    
+#Utility Functions
+
+def second_converter(seconds):
+    seconds = 86400 - seconds
+    result = ''
+    if((seconds % (60 * 60 * 24)) >= 0):
+        result += str(int(seconds / (60 * 60 * 24))) + ' Days '#days
+        seconds %= 60 * 60 * 24
+    if((seconds % (60 * 60)) >= 0):
+        result += str(int(seconds / (60 * 60))) + ' Hours '#hours
+        seconds %= 60 * 60
+    if(seconds % 60 >= 0):
+        result += str(int(seconds / 60)) + ' Minutes '#minutes
+        seconds %= 60
+    result += str(seconds) + ' Seconds'#seconds
+    return result
+
+#Database Functions
 
 def create_connection(db_file):
     '''
@@ -137,26 +170,6 @@ def get_random_riddle(connection):
     except:
         print('Error accessing the riddle database...')
         return False
-        
-def day_countdown(channel):
-    global is_answered
-    for sec in range(10):
-        print(sec)
-        sleep(1)
-    with lock:
-        is_answered = True
-    print('-----Time is up!-----')
-    print('The time to answer the riddle has passed!')
-    print('#' + str(riddle_index) + ': ' + riddle)
-    print('Answer: ' + answer)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(timeout_notify_user(channel))
-    return
-    
-async def timeout_notify_user(channel):
-    await client.send_message(channel, 'The time to answer the riddle has passed!')
-    await client.send_message(channel, '#' + str(riddle_index) + ': ' + riddle)
-    await client.send_message(channel, 'Answer: ' + answer)
 
 def main():
     os.system('cls')
