@@ -34,7 +34,7 @@ sql_get_riddle = 'SELECT * FROM riddles WHERE id = '
 @client.event
 async def on_message(message):
     #lets just make sure a bot is not sending commands to us.
-    if (message.author.bot):
+    if message.author == client.user:
         return
     global riddle_time
     #This may be the firtime that on_message is called, so, riddle_time is'None'
@@ -69,10 +69,17 @@ async def on_message(message):
             await client.send_message(message.channel, '#' + str(riddle_index) + ': ' + riddle)
             await client.send_message(message.channel, 'Remaining Time: ' + second_converter(time_difference.seconds))
     if message.content.startswith('~a'):
-        #TODO:
-        #   - Cant answer when is_answered == None
-        #   - make answer formula
-        print(answer)
+        #Make sure that the riddle_time is either not set or above 1 day. Accurate down to a second. 
+        if not riddle_time == None:
+            if(time_difference.seconds <= 86400): #There are 86400 seconds in a day
+                if(answer in message.content):
+                    await client.send_message(message.author, "Correct!")
+                    riddle_time = None
+            else:
+                await client.send_message(message.channel, 'The answer window for the current riddle has expired, ' +
+                    'please request a new one.')
+        else:
+            await client.send_message(message.channel, 'No riddle is currently ative to be answered, please request one.')
     if message.content.startswith('~help'):
         await client.send_message(message.channel, 'Daily Riddle Bot Commands:')
         await client.send_message(message.channel, '    ~r: Request a new riddle')
@@ -172,7 +179,7 @@ def get_random_riddle(connection):
         return False
 
 def main():
-    os.system('cls')
+    os.system('cls') #Lets get a clean screen
     global db_connection
     print('Attempting to load: {}'.format(database_path))
     db_connection = create_connection(database_path)
