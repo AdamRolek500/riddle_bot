@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime
 from sqlite3 import Error
 from random import randint
+from difflib import SequenceMatcher
 
 #Discord client, used for all dicord functions.
 client = discord.Client()
@@ -31,9 +32,20 @@ sql_create_riddle = 'INSERT INTO riddles(riddle,answer) VALUES(?,?)'
 sql_get_count = 'SELECT count(*) FROM riddles'
 sql_get_riddle = 'SELECT * FROM riddles WHERE id = '
 
+#Bot Functions
+
 @client.event
 async def on_message(message):
-    #lets just make sure a bot is not sending commands to us.
+    """
+    Function that allows the bot to see messages.
+    
+    params: 
+        message: mesaage information from user messages in discord
+    
+    return:
+        nothing
+    """
+    #lets just make sure our bot is not sending commands to us.
     if message.author == client.user:
         return
     global riddle_time
@@ -72,9 +84,12 @@ async def on_message(message):
         #Make sure that the riddle_time is either not set or above 1 day. Accurate down to a second. 
         if not riddle_time == None:
             if(time_difference.seconds <= 86400): #There are 86400 seconds in a day
-                if(answer in message.content):
+                # compair the ratio of similarity between user and real ananswer, some answers are long
+                if(SequenceMatcher(None, message.content, answer).ratio() >= .5):
                     await client.send_message(message.author, "Correct!")
                     riddle_time = None
+                else: 
+                    await client.send_message(message.author, "Incorrect!")
             else:
                 await client.send_message(message.channel, 'The answer window for the current riddle has expired, ' +
                     'please request a new one.')
@@ -88,11 +103,24 @@ async def on_message(message):
 
 @client.event
 async def on_ready():
+    """
+    Called when tyhe bot comes online
+    """
     print('Logged in as {}'.format(client.user.name))
     
 #Utility Functions
 
 def second_converter(seconds):
+    """
+    Helpful function for getting the time left for a riddle in a nice readable form
+    Accurate down to the second.
+    
+    params:
+        seconds: The time inseconds that the current riddle has been active
+    
+    return:
+        result: Formated string so it is understandable (Pretty Print)
+    """
     seconds = 86400 - seconds
     result = ''
     if((seconds % (60 * 60 * 24)) >= 0):
@@ -140,37 +168,62 @@ def create_table(conn, create_table_sql):
         Nothing is returned
     '''
     try:
+        #Create a cursor and atemp to create the table
         c = conn.cursor()
         c.execute(create_table_sql)
         print('Creating the Riddle table if it is not present.')
     except Error as e:
         print(e)
         
-def create_riddle(conn, project):
+def create_riddle(conn, riddle):
+    """
+    Helpful for entering data into the database
+    
+    params:
+        conn: The database connection
+        riddle: Riddle tuple containg the riddle and answer
+    """
     cur = conn.cursor()
-    cur.execute(sql_create_riddle, project)
+    cur.execute(sql_create_riddle, riddle)
     
 def populate_database():
+    """
+    Helper function to read data from riddles.txt and insert them into dailyriddle.db
+    """
     with open('riddles.txt') as f:
         content = f.readlines()
         content = [x.strip() for x in content]
         with db_connection:
             for x in range(0, len(content), 2):
-                project = (content[x], content[x + 1]);
-                project_id = create_riddle(db_connection, project)
+                riddle = (content[x], content[x + 1]);
+                riddle_id = create_riddle(db_connection, riddle)
                 print("({}, {})\n".format(content[x], content[x + 1]))
                 
 def get_random_riddle(connection):
+    """
+    Used to fetch a riddle from the database at a random index
+    
+    params:
+        connection: the database connection
+        
+    return:
+        True: for a success
+        False: For a failure
+    """
     try:
         global riddle
         global answer
         global riddle_index
         cur = connection.cursor()
+        #let get the count of rows in the riddls table
         cur.execute(sql_get_count)
         returned = cur.fetchall()
+        #getting a random ID
         riddle_index = randint(1, returned[0][0])
+        #pulling the random riddle
         cur.execute(sql_get_riddle + str(riddle_index))
         returned = cur.fetchall()
+        #storing the riddle and answer
         riddle = returned[0][1]
         answer = returned[0][2]
         return True
